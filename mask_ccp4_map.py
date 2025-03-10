@@ -18,10 +18,18 @@ def main():
     map_obj = gemmi.read_ccp4_map(ccp4_file)
     grid = map_obj.grid
 
-    # 原点を grid.get_position(0,0,0) で取得（グリッドの最初の点の実空間座標）
+    # 原点はグリッドの (0,0,0) の位置
     origin = grid.get_position(0, 0, 0)
-    step = grid.step      # 各方向のグリッド間隔
-    size = grid.size      # グリッドサイズ (nx, ny, nz)
+    # 各軸方向のステップは、隣接グリッド点間の距離として計算
+    pos_x1 = grid.get_position(1, 0, 0)
+    pos_y1 = grid.get_position(0, 1, 0)
+    pos_z1 = grid.get_position(0, 0, 1)
+    step_x = pos_x1.x - origin.x
+    step_y = pos_y1.y - origin.y
+    step_z = pos_z1.z - origin.z
+    step = gemmi.Vec3(step_x, step_y, step_z)
+    
+    size = grid.size  # グリッドサイズ (nu, nv, nw)
 
     # 全体の平均密度を算出
     density_array = grid.array
@@ -38,7 +46,6 @@ def main():
         for chain in model:
             for residue in chain:
                 for atom in residue:
-                    # 原子記号を大文字に変換して、対象リストに含まれているかチェック
                     if atom.element.name.upper() in mask_elements:
                         heavy_atoms.append(atom)
     print("検出されたマスク対象原子の数 =", len(heavy_atoms))
@@ -71,7 +78,7 @@ def main():
                     point = gemmi.Vec3(origin.x + i * step.x,
                                         origin.y + j * step.y,
                                         origin.z + k * step.z)
-                    # 距離がmask_radius以内なら値を平均密度に更新
+                    # 距離が mask_radius 内なら値を平均密度に更新
                     if (point - pos).length() <= mask_radius:
                         grid.set_value(i, j, k, mean_density)
 
@@ -82,3 +89,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
