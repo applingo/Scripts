@@ -18,8 +18,8 @@ def main():
     map_obj = gemmi.read_ccp4_map(ccp4_file)
     grid = map_obj.grid
 
-    # 原点を grid.origin から取得
-    origin = grid.origin
+    # 原点を grid.get_position(0,0,0) で取得（グリッドの最初の点の実空間座標）
+    origin = grid.get_position(0, 0, 0)
     step = grid.step      # 各方向のグリッド間隔
     size = grid.size      # グリッドサイズ (nx, ny, nz)
 
@@ -38,7 +38,7 @@ def main():
         for chain in model:
             for residue in chain:
                 for atom in residue:
-                    # 原子記号を大文字に変換して、対象リストに含まれているかをチェック
+                    # 原子記号を大文字に変換して、対象リストに含まれているかチェック
                     if atom.element.name.upper() in mask_elements:
                         heavy_atoms.append(atom)
     print("検出されたマスク対象原子の数 =", len(heavy_atoms))
