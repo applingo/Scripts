@@ -18,11 +18,10 @@ def main():
     map_obj = gemmi.read_ccp4_map(ccp4_file)
     grid = map_obj.grid
 
-    # ヘッダーから原点を取得
-    origin = map_obj.header.origin
-    # 格子間隔は grid.step で取得可能
-    step = grid.step
-    size = grid.size  # グリッドサイズ (nx, ny, nz)
+    # 原点を grid.origin から取得
+    origin = grid.origin
+    step = grid.step      # 各方向のグリッド間隔
+    size = grid.size      # グリッドサイズ (nx, ny, nz)
 
     # 全体の平均密度を算出
     density_array = grid.array
