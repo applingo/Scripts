@@ -15,24 +15,23 @@ def main():
     mask_radius = 2.0  # マスクする半径 (Å)
 
     print("Reading CCP4 map from:", input_map)
-    m = gemmi.read_ccp4_map(input_map)
-    # マップをユニットセル全体に合わせ、軸を X,Y,Z に整列
-    m.setup(float('nan'))
+    # setup=False で読み込み、後から ReorderOnly モードで軸並び替えを行う（グリッド次元は変更しない）
+    m = gemmi.read_ccp4_map(input_map, setup=False)
+    m.setup(float('nan'), mode=gemmi.MapSetup.ReorderOnly)
 
     # Origin（原点オフセット）はヘッダーのワード 49～51 から取得
     origin = gemmi.Position(m.header_float(49), m.header_float(50), m.header_float(51))
-    # グリッドサイズ（各軸のボクセル数）
+    # グリッドサイズは m.grid.nu, m.grid.nv, m.grid.nw で取得
     nu, nv, nw = m.grid.nu, m.grid.nv, m.grid.nw
-    # ボクセルサイズ（各軸方向）は、単位セルの a, b, c をグリッドサイズで割る
+    # ボクセルサイズ（step）は、単位セルの a, b, c をグリッド数で割る
     step_x = m.grid.unit_cell.a / nu
     step_y = m.grid.unit_cell.b / nv
     step_z = m.grid.unit_cell.c / nw
     step = (step_x, step_y, step_z)
-    size = (nu, nv, nw)
 
     print(f"Origin: {origin}")
     print(f"Step size: {step}")
-    print(f"Grid size: {size}")
+    print(f"Grid size: {(nu, nv, nw)}")
 
     # 全体の平均密度を計算
     density_array = m.grid.array
@@ -62,12 +61,12 @@ def main():
         center_j = (atom_pos.y - origin.y) / step_y
         center_k = (atom_pos.z - origin.z) / step_z
 
-        # mask_radius に相当するインデックス幅を計算
+        # mask_radius に対応するインデックス幅を各軸で計算
         di = int(math.ceil(mask_radius / abs(step_x))) if step_x != 0 else 0
         dj = int(math.ceil(mask_radius / abs(step_y))) if step_y != 0 else 0
         dk = int(math.ceil(mask_radius / abs(step_z))) if step_z != 0 else 0
 
-        # チェックするグリッドインデックスの範囲（境界チェック付き）
+        # チェックするグリッドインデックス範囲（境界チェック付き）
         i_min = max(0, int(center_i) - di)
         i_max = min(nu - 1, int(center_i) + di)
         j_min = max(0, int(center_j) - dj)
