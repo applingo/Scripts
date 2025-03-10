@@ -18,6 +18,12 @@ def main():
     map_obj = gemmi.read_ccp4_map(ccp4_file)
     grid = map_obj.grid
 
+    # ヘッダーから原点を取得
+    origin = map_obj.header.origin
+    # 格子間隔は grid.step で取得可能
+    step = grid.step
+    size = grid.size  # グリッドサイズ (nx, ny, nz)
+
     # 全体の平均密度を算出
     density_array = grid.array
     mean_density = float(np.mean(density_array))
@@ -28,8 +34,7 @@ def main():
     structure = gemmi.read_structure(pdb_file)
     heavy_atoms = []
     # マスク対象とする元素のリスト
-    mask_elements = {"ZN", "NA", "CA", "K", "MG", "FE", "CU", "MN", "CO", "NI", "MO", "CL", "BR", "I", "SE", "SR", "PB"}
-
+    mask_elements = {"ZN", "NA", "CA", "K", "MG"}
     for model in structure:
         for chain in model:
             for residue in chain:
@@ -38,11 +43,6 @@ def main():
                     if atom.element.name.upper() in mask_elements:
                         heavy_atoms.append(atom)
     print("検出されたマスク対象原子の数 =", len(heavy_atoms))
-
-    # グリッドパラメータの取得（原点、格子間隔、サイズ）
-    origin = grid.origin  # grid[0,0,0]に対応する実空間座標
-    step = grid.step      # 各方向のグリッド間隔
-    size = grid.size      # グリッドサイズ (nx, ny, nz)
 
     # 各対象原子周囲を走査し、mask_radius内のボクセルを平均密度に置換
     print("対象原子周囲をマスクして平均密度に置換中...")
