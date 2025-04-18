@@ -5,16 +5,19 @@ chain_clash_remover.py
 Detect and remove clashing atoms (or whole residues) from a **target** PDB file
 relative to a **reference** PDB file.
 
-2025‑04‑18 — v1.2
+2025‑04‑18 — v1.3
 -----------------
-* **NEW:** `--debug-pairs` prints every `(target‑chain → reference‑chain)`
-  comparison, e.g. `A→B`, `B→A`, `C→A`, … soユーザー can verify that chains
-  B/C are processed.
-* Code style tweaks (type‑hints, f‑strings).
+* **NEW:** `--list-chains` prints chain IDs found in *target* and *reference*
+  PDBs and **exits**, useful for迅速なデバッグ (確認だけで何も削除しない)。
+* Keeps `--debug-pairs`, `--verbose`, etc.
 
-Quick start
------------
+Usage examples
+--------------
 ```bash
+# 1) チェーン一覧だけ確認
+python chain_clash_remover.py --target file2.pdb --ref file1.pdb --list-chains
+
+# 2) 競合除去を実行 & ペアも表示
 python chain_clash_remover.py \
     --ref file1.pdb --target file2.pdb \
     --cutoff 2.0 --ignore-h \
@@ -118,16 +121,26 @@ def main(argv: List[str] | None = None):
                    help="Fraction (0‑1) of atoms that must clash before a whole residue is removed (default 1.0)")
     p.add_argument("--self-compare", action="store_true", help="Also compare identical chain IDs (A vs A)")
     p.add_argument("--debug-pairs", action="store_true", help="Print every chain‑comparison pair evaluated")
+    p.add_argument("--list-chains", action="store_true", help="List chain IDs in target and reference, then exit")
     p.add_argument("-v", "--verbose", action="store_true", help="Per‑chain removal statistics")
 
     args = p.parse_args(argv)
 
-    if not 0.0 <= args.max_fraction <= 1.0:
-        sys.exit("--max-fraction must be between 0 and 1")
-
     pdb_parser = PDBParser(QUIET=True)
     ref_struct = pdb_parser.get_structure("ref", Path(args.ref))
     tgt_struct = pdb_parser.get_structure("tgt", Path(args.target))
+
+    # List‑only mode --------------------------------------------------------
+    if args.list_chains:
+        tgt_ids = [c.id for c in tgt_struct.get_chains()]
+        ref_ids = [c.id for c in ref_struct.get_chains()]
+        print(f"[INFO] target chains:    {' '.join(tgt_ids) if tgt_ids else '(none)'}")
+        print(f"[INFO] reference chains: {' '.join(ref_ids) if ref_ids else '(none)'}")
+        sys.exit(0)
+
+    # Normal clash‑removal mode -------------------------------------------
+    if not 0.0 <= args.max_fraction <= 1.0:
+        sys.exit("--max-fraction must be between 0 and 1")
 
     atoms_to_remove: Set[Atom] = set()
     residues_to_remove: Set[Residue] = set()
