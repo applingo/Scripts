@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 # パラメータの設定
-Kd_values = [1e-6, 1e-7, 1e-8]  # Dissociation constants [M]
+Kd_values = [1e-6, 5e-7, 1e-7]  # Dissociation constants [M]
 L0_values = [5*1e-5, 10*1e-6, 5*1e-6]   # Ligand concentrations [M]
 
 # タンパク質濃度の範囲：1e-6 M から 1e-4 M（線形に100点）
