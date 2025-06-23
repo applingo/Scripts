@@ -17,6 +17,8 @@ AmberTools25 インストールと高速化まとめ
 
    ※ `amber.sh` により AMBERHOME や PATH が自動設定される
 
+$ ls $CONDA_PREFIX/amber.sh
+/home/username/miniforge3/envs/AmberTools25/amber.sh
 ----------------------------------------
 
 【2. GPU版 QUICK を antechamber から利用する方法】
