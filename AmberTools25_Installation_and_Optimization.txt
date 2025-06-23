@@ -1,0 +1,73 @@
+===============================
+AmberTools25 インストールと高速化まとめ
+===============================
+
+【1. conda による AmberTools25 のインストール方法】
+
+1. Miniforge (推奨) または Miniconda をインストール
+   https://github.com/conda-forge/miniforge
+
+2. 新しい conda 環境を作成し、AmberTools25 をインストール
+   $ conda create -n AmberTools25 python=3.12
+   $ conda activate AmberTools25
+   $ conda install -c conda-forge -c dacase ambertools-dac=25
+
+3. AmberTools 環境を有効化
+   $ source $CONDA_PREFIX/amber.sh
+
+   ※ `amber.sh` により AMBERHOME や PATH が自動設定される
+
+----------------------------------------
+
+【2. GPU版 QUICK を antechamber から利用する方法】
+
+1. AmberTools25 conda 版に含まれる `quick.cuda` のパスを確認
+   $ which quick.cuda
+
+2. GPU を使うよう環境変数を設定
+   $ export CUDA_VISIBLE_DEVICES=0
+   $ export SQMEXE=$(which quick.cuda)
+
+3. antechamber を通常通り実行（-c bcc など）
+   $ antechamber -i input.pdb -fi pdb \
+                 -o output.mol2 -fo mol2 \
+                 -at gaff2 -c bcc -nc 0 -s 2
+
+   ※ `SQMEXE` で antechamber が呼ぶ QM エンジンを `quick.cuda` に変更可能
+
+----------------------------------------
+
+【3. OpenMP 版 sqm をローカルにビルドして antechamber から使う方法】
+
+1. 必要なビルドツールを conda で導入
+   $ conda activate AmberTools25
+   $ conda install -c conda-forge compilers cmake make
+
+2. AmberTools25 ソースをダウンロードして展開
+   $ mkdir -p ~/src && cd ~/src
+   $ wget https://ambermd.org/downloads/AmberTools25.tar.bz2
+   $ tar xjf AmberTools25.tar.bz2
+
+3. OpenMP ビルド
+   $ cd amber25_src
+   $ mkdir build_openmp && cd build_openmp
+   $ ../configure gnu -openmp -noX11 -prefix $HOME/amber25_openmp
+   $ make -j$(nproc) sqm
+   $ make install -j$(nproc) sqm
+
+   → $HOME/amber25_openmp/bin/sqm に OpenMP 対応 sqm が生成される
+
+4. antechamber から OpenMP 版 sqm を使用
+   $ export OMP_NUM_THREADS=8
+   $ export SQMEXE=$HOME/amber25_openmp/bin/sqm
+   $ antechamber -i input.pdb -fi pdb \
+                 -o output.mol2 -fo mol2 \
+                 -at gaff2 -c bcc -nc 0 -s 2
+
+----------------------------------------
+
+【補足】
+- OpenMP 版や QUICK を使うには antechamber に対して SQMEXE 環境変数で実行ファイルを明示する
+- GPU があれば `quick.cuda` が最速（最大 100 倍高速）
+- CPU 並列では OpenMP 版 sqm で 2～2.5 倍程度の高速化が期待できる
+
