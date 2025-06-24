@@ -1,0 +1,101 @@
+ゴール
+5FIW の HEME–タンパク質 3 点共有結合とまったく同じ化学拘束を
+マウス由来の同型タンパク質モデルでも使えるようにする。
+
+既存 mmCIF から必要な情報だけ抽出→自分のモデルに移植するのが最短ルート。
+
+① 5FIW から“リンク情報”だけ取り出す
+手順	コマンド例	目的
+1	wget https://files.rcsb.org/view/5FIW.cif	元 mmCIF を取得
+2	grep -n "_struct_conn." -A100 5FIW.cif > 5FIW_links.cif	共有結合を記述する _struct_conn ループを抜き出す
+3	（任意）grep -n "_struct_conn_angle" -A100 5FIW.cif >> 5FIW_links.cif	角度･平面拘束もある場合は追記
+
+_struct_conn に conn_type “covale” が付いている 3 本が HEME の共有結合
+（MPO 型 peroxidase では HEM–CYS-SG, HEM–MET-SD, HEM–GLU-OE1 の 3 本）。
+ebi.ac.uk
+
+② 抜き出したリンクを 辞書化 する（Phenix ReadySet が簡単）
+bash
+コピーする
+編集する
+phenix.ready_set 5FIW.cif write_geo_file=False  \
+                 extract_only=True              \
+                 link_cif_out=heme_links.cif    \
+                 keep_identical_atom_names=True
+ポイント
+
+extract_only=True で 未知リガンド生成はスキップし、リンク辞書だけを出力。
+
+出力 heme_links.cif には各共有結合の
+
+_chem_comp_bond … 結合距離
+
+_chem_comp_angle … 必要なら角度
+がすでに書かれているので、そのまま再利用できる。
+
+③ 自分のモデル（マウス配列）に LINK 行 / struct_conn を書く
+PDB 形式の場合
+PDB
+コピーする
+編集する
+LINK         SG  CYS A 145      C1  HEM X   1     1555   1.81
+LINK         SD  MET A 243      C5  HEM X   1     1555   1.80
+LINK        OE1  GLU A 242      C8  HEM X   1     1555   1.31
+mmCIF 形式の場合（推奨）
+コピーした _struct_conn ループの チェーン ID / 残基番号 だけを
+自分のモデルに合わせて書き換える（化学情報はそのまま）。
+
+CIF
+コピーする
+編集する
+loop_
+_struct_conn.id
+_struct_conn.conn_type_id
+_struct_conn.ptnr1_label_asym_id
+_struct_conn.ptnr1_label_seq_id
+_struct_conn.ptnr1_symmetry
+_struct_conn.ptnr1_label_atom_id
+_struct_conn.ptnr2_label_asym_id
+_struct_conn.ptnr2_label_seq_id
+_struct_conn.ptnr2_symmetry
+_struct_conn.ptnr2_label_atom_id
+_struct_conn.pdbx_dist_value
+1 covale  A 145  . SG  X 1 .  C1 1.81
+2 covale  A 243  . SD  X 1 .  C5 1.80
+3 covale  A 242  . OE1 X 1 .  C8 1.31
+化学拘束はチェーン・番号に依存しないので、書き換えるのは
+label_asym_id と label_seq_id だけで OK。
+
+④ 精密化時に 辞書を一緒に渡す
+bash
+コピーする
+編集する
+phenix.refine  my_mouse_model_with_links.cif  data.mtz  \
+               restraints=heme_links.cif,HEM.cif
+HEM.cif は標準モノマー辞書（$PHENIX/…/monomers/HEM.cif）で十分。
+
+REFMAC の場合は LIBIN heme_links.cif LIBOUT out.cif を追加。
+
+⑤ チェックポイント
+チェック	コマンド	合格ライン
+リンクが認識されたか	grep "Covalent link" refine.log	3 本とも “applied”
+幾何の RMSZ	phenix.geometry_minimization … → log	< 1.5 推奨
+マップで結合密度が切れていないか	Coot / PyMOL	連続している
+
+⑥ 別の作り方（GUI 派 or CCP4 派）
+方法	ツール	大まかな流れ	参考
+AceDRG でリンク辞書を新規生成	acedrg -L "CYS.SG-HEM.C1, …"	1 行で複数リンク指定可	
+pmc.ncbi.nlm.nih.gov
+JLigand GUI	5FIW を読み込み → “Add link” で 3 本クリック → Save Link Description	直感的	CCP4 Tutorials
+mmCIF ベタ貼り	5FIW の _struct_conn と _struct_conn_angle をそのままコピー	まさにテンプレート利用	–
+
+まとめ
+5FIW.cif から _struct_conn ループを抜く。
+
+ReadySet でリンク辞書 (heme_links.cif) を自動生成。
+
+自分のモデルに LINK（または struct_conn） を書き換えて挿入。
+
+HEM.cif + heme_links.cif を渡して refine。
+
+これで、5FIW と同一の 3 点共有結合拘束がマウスタンパク質にも完全に適用できます。
