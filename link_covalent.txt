@@ -1,0 +1,131 @@
+概要 ― まず押さえておきたいこと
+モノマー辞書（ligand.cif）
+
+リガンド単体の結合距離・角度・平面拘束などを定義。
+
+AceDRG（CCP4）や phenix.elbow（Phenix）で自動生成できる。
+
+リンク辞書（link_*.cif）
+
+リガンドとタンパク質残基（またはリガンド同士）を共有結合でつなぐ「LINK」用拘束を定義。
+
+1 か所だけなら ready_set / AceDRG が自動で作れることもあるが、3 点結合のような複雑なケースではリンク辞書を別途書く方が確実。
+
+PDB に書く LINK (または LINKR) 行
+
+LINK atom1 res1 … atom2 res2 … を 3 本分書いておく。
+
+Phenix と Coot はここを読んで、対応するリンク辞書を探す。
+
+1. リガンド単体の CIF を作る
+AceDRG（推奨）
+bash
+コピーする
+編集する
+acedrg --resname LIG ligand.pdb   # ligand.cif と ligand.pdb が生成される
+phenix.elbow（例）
+bash
+コピーする
+編集する
+phenix.elbow --do-all --residue=LIG ligand.pdb
+生成された LIG.cif を $CIFPATH（Phenix なら $PHENIX/phenix/external/kinemage/monomers/ など）か、
+後で refinement 時に restraints=ligand/LIG.cif として渡せる場所に置く。
+
+2. 3 点共有結合用リンク辞書を作る
+2-1. JLigand で GUI 作成 (直観的)
+Open → Residue で LIG と対象アミノ酸残基を同時に読み込む。
+
+画面上で Add Link を選び、3 本の共有結合（例: LIG-N1 ↔ CYS-SG, LIG-C5 ↔ LYS-NZ, …）をクリック。
+
+Save Link Description で link_lig_3point.cif を保存。
+
+2-2. CIF 手書きテンプレート（例）
+CIF
+コピーする
+編集する
+data_link_LIG_CYS_LYS_SER
+# 3 bonds: LIG–CYS, LIG–LYS, LIG–SER
+_loop
+_geom_bond_atom_site_label_1
+_geom_bond_atom_site_label_2
+_geom_bond_distance
+_geom_bond_site_symmetry_1
+_geom_bond_site_symmetry_2
+ # thio-ether
+  CYS SG   LIG C5   1.81  .
+ # secondary amine
+  LYS NZ   LIG N1   1.47  .
+ # ester
+  SER OG   LIG C7   1.33  .
+#
+# 必要なら角度・平面拘束も追加
+data_ 行の名前は好きに決めてよい（Phenix は link_*.cif 内を全部探索）。
+
+距離は文献値か AceDRG が計算した平均値を採用。
+
+3. PDB に LINK 行を追加
+PDB
+コピーする
+編集する
+LINK         C5  LIG A 999      SG  CYS A 123     1555   1.81
+LINK         N1  LIG A 999      NZ  LYS A 200     1555   1.47
+LINK         C7  LIG A 999      OG  SER A 150     1555   1.33
+列位置は PDB 規格（columns 13-16, 17-20, …）に注意。
+
+LINKR にすると Phenix が 自動でリンク辞書を書き出すこともあるが、複数リンクの場合は独自辞書を添付した方が安定。
+
+4. Phenix / REFMAC での使い方
+bash
+コピーする
+編集する
+phenix.refine model_linked.pdb data.mtz \
+  restraints=link_lig_3point.cif,ligand/LIG.cif
+REFMAC なら LIBIN link_lig_3point.cif LIBOUT out.cif。
+
+Coot で手動修正 → Validate → Update Geometry してから再 refine。
+
+5. Heme（ヘム）を 3 点で共有結合する場合
+典型例 ― ヘム c (HEC) + 2 × Cys + His
+標準モノマー辞書 HEC.cif が CCP4 / Phenix に同梱。
+
+Thioether リンク辞書 CYS-HEM（2 本）が既に用意されている。
+
+軸 His―Fe の共有結合（または配位結合）は HIS-HEM リンクを追加するだけ。
+
+手順
+PDB に LINK
+
+PDB
+コピーする
+編集する
+LINK  SG  CYS A  23     C1  HEC A 501     1555   1.81  # thio-ether 1
+LINK  SG  CYS A  24     C4  HEC A 501     1555   1.81  # thio-ether 2
+LINK  ND1 HIS A  87     FE  HEC A 501     1555   2.10  # axial His
+必要な辞書を確認
+
+CYS-HEM.cif（多くの配布物に入っている）
+
+HIS-HEM_AX.cif（無ければ JLigand で1行だけのリンク辞書を作る）
+
+refine 時に restraints=HEC.cif,CYS-HEM.cif,HIS-HEM_AX.cif を渡す。
+
+✅ 結論 ― 既存の heme 辞書＋補助リンク辞書を組み合わせれば、ヘムでも 3 点共有結合は問題なく取り扱えます。
+
+6. トラブルシューティングのヒント
+症状	代表的な原因	対策
+refine 中に “unknown link” エラー	PDB の LINK 行と CIF 内の atom 名 / res 名が不一致	PDB・CIF 双方で ATOM 名（列の桁位置も！）と resname を合わせる
+うまく距離拘束がかからない	link 辞書に _chem_comp_bond.type が無い	sing（共有結合）か covale を明示
+結合長が極端に短い / 長い	錯体の価数や配位数が違う	鉄中心の場合は REDUCE や phenix.metal_coordinates で酸素・水分子の配位数をチェック
+
+まとめ
+リガンド単体のモノマー辞書を AceDRG/ELBOW で作る。
+
+3 本の共有結合を記述した リンク辞書を JLigand などで作成。
+
+PDB に対応する LINK 行を 3 本書く。
+
+refine で 両方の CIF を読み込ませれば完成。
+
+heme なら標準辞書＋既存の CYS-HEM, HIS-HEM リンクでほぼ完結。
+
+これで、タンパク質と 3 点共有結合を持つリガンド（heme を含む）を安定して精密化・可視化できます。
