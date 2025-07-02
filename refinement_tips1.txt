@@ -1,0 +1,157 @@
+### 結論 ―― `minimize { exclude_selection = … }` は **real\_space\_refine では正式パラメータではありません**
+
+* `exclude_selection` というキーワードは **NCS 検索用の search\_options** など、別のサブツリーで使われるものです。`refinement.minimize.exclude_selection` という項目は *phenix.real\_space\_refine* のパラメータ階層には存在しません。
+* そのため、`.eff` ファイルに書いても **読まれていない**（無視される）だけで、たまたま動いて見えたのはログや .geo を確認していない限り“偶然座標がほぼ変わらなかった”に過ぎません。
+
+実際、公式 ML でも
+
+> > Is it possible to “freeze” atoms in phenix.real\_space\_refine?
+> > **“…it is *not currently possible* to completely freeze atoms; use reference‐coordinate restraints instead.”** ([phenix-online.org][1])
+
+と開発者（P. Afonine 氏）が回答しています。
+
+---
+
+## リガンドを壊さずタンパク質だけ精密化する現実的な手順
+
+### ① リガンドを剛体フィットさせる
+
+```bash
+# rigid_mol.eff
+refinement.rigid_body {
+  group = resname MOL                # 必要なら chain/residue も付与
+}
+
+phenix.real_space_refine \
+    model_start.pdb  map.ccp4  resolution=3.0 \
+    run=rigid_body \
+    rigid_mol.eff  mol.cif
+# → 出力: after_rigid.pdb
+```
+
+### ② たった今のリガンド座標を“参照”として凍結し、タンパク質を最小化
+
+```text
+# freeze_MOL.eff
+reference_coordinate_restraints {
+  enabled   = True
+  selection = resname MOL
+  sigma     = 0.02    # Å程度に小さく。0 に近いほどガチガチ
+}
+```
+
+```bash
+phenix.real_space_refine \
+    after_rigid.pdb  map.ccp4  resolution=3.0 \
+    run=minimization_global+local_grid_search \
+    freeze_MOL.eff  mol.cif  nproc=8
+```
+
+* **`reference_coordinate_restraints`** は公式使用例 #14 にある座標固定用オプションで、選択した原子を初期位置（＝rigid体合わせ後の位置）から動かさないよう強く拘束できます ([phenix-online.org][2])。
+* σ（`sigma`）を 0.05 Å 以下にすれば、実質的に剛体と同等の固定強度になります。
+* これで **MOL** の内部コンフォメーションも外部位置も保持したまま、タンパク質側だけが LBFGS 最小化で衝突を解消します。
+
+---
+
+## ワンジョブでまとめたい場合のスクリプト
+
+```bash
+phenix.real_space_refine \
+    model_start.pdb  map.ccp4  resolution=3.0 \
+    run=rigid_body+minimization_global \
+    rigid_mol.eff  freeze_MOL.eff  mol.cif
+```
+
+* 1 マクロサイクル目で剛体フィット → 2 サイクル目以降でタンパク質のみ座標最適化。
+* 参考までに非結合衝突を厳しめにするなら
+
+```text
+nonbonded_weight = 300
+clash_guard.nonbonded_distance_threshold = 0.4
+```
+
+を追加すると、タンパク質がリガンドから素早く退いてくれるケースが多いです。
+
+---
+
+### まとめ
+
+| 課題                                                            | 正しい対応策                                                        |
+| ------------------------------------------------------------- | ------------------------------------------------------------- |
+| **`minimize.exclude_selection` は real\_space\_refine で機能しない** | 代わりに `reference_coordinate_restraints` を使い、σ を小さくして「実質的に凍結」する |
+| リガンドを壊さず rigid body のみ動かす                                     | `refinement.rigid_body.group = resname MOL`                   |
+| タンパク質は通常精密化しクラッシュ回避                                           | `run=minimization_global(+local_grid_search)` ＋ 非結合ペナルティ調整    |
+
+これが、現行の Phenix（2025-06-時点の安定版／nightly いずれも）で最も確実に「リガンド剛体＋タンパク質のみ精密化」を実現する方法です。
+
+[1]: https://phenix-online.org/archives/list/phenixbb%40phenix-online.org/thread/OERHZE3MP64OGZ2YCD6WW4BI4UUVUNCK/ "
+real_space_refine questions - phenixbb - phenix-online.org
+"
+[2]: https://phenix-online.org/documentation/reference/real_space_refine.html "phenix.real_space_refine: a tool for refinement a model against a map"
+
+
+`nonbonded_weight` も `clash_guard.nonbonded_distance_threshold` も
+**phenix.real\_space\_refine の「トップレベル」パラメータ**です。
+したがって **どの scope (refinement や pdb\_interpretation など) の中に入れる必要はありません**。
+置き方は 2 通りあります。
+
+---
+
+## 1 ) 追加の *.eff* ファイルに書く
+
+```text
+# tight_clash.eff  ── 好きなファイル名で OK
+nonbonded_weight = 300                       # 非結合反発項の重みを強く
+clash_guard.nonbonded_distance_threshold = 0.4  # 0.4 Å 未満を衝突扱い
+```
+
+実行例
+
+```bash
+phenix.real_space_refine \
+    model.pdb map.mrc resolution=3.0 \
+    run=rigid_body+minimization_global \
+    rigid_mol.eff freeze_MOL.eff  tight_clash.eff  mol.cif
+```
+
+* 複数の *.eff* ファイルは **スペース区切りで並べるだけ**。
+* それぞれのパラメータがマスター PHIL ツリーにマージされます。
+
+---
+
+## 2 ) コマンドラインで直接キーバリュー指定
+
+```bash
+phenix.real_space_refine \
+    model.pdb map.mrc resolution=3.0 \
+    run=rigid_body+minimization_global \
+    rigid_mol.eff freeze_MOL.eff  mol.cif \
+    nonbonded_weight=300 \
+    clash_guard.nonbonded_distance_threshold=0.4
+```
+
+どちらの方法でも内部では同じ扱いになります。
+
+---
+
+### 参考
+
+* `nonbonded_weight` は非結合距離（Van-der-Waals）ペナルティの重み。
+  デフォルトは \~100（旧版では 1000）で、衝突を強く避けたいときに上げるのが定石です。([phenix-online.org][1])
+* `clash_guard.nonbonded_distance_threshold` は「衝突」と見なす最短距離（Å）。
+  既定値 0.5 Å を 0.4 Å などに下げると、より早い段階で警告／強制排除が掛かります。
+  このパラメータは **clash\_guard** のサブスコープで、名前ごとトップに書けます。([cci.lbl.gov][2])
+
+---
+
+#### 要点まとめ
+
+| やりたいこと                  | 書き場所                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| プロジェクト固有の設定ファイルにして共有したい | 追加 *.eff* に `nonbonded_weight = …`  `clash_guard.nonbonded_distance_threshold = …` |
+| その場限りでサッと試したい           | コマンドライン末尾に `nonbonded_weight=… clash_guard.nonbonded_distance_threshold=…`         |
+
+どちらでも **real\_space\_refine** のマスター PHIL が読み取り、設定が反映されます。
+
+[1]: https://phenix-online.org/archives/list/phenixbb%40phenix-online.org/thread/GIS2TS2LSFB22NNCAXZ63HTEAJI6DP3D/?utm_source=chatgpt.com "real space refine and nonbonded_weight - phenixbb - phenix-online ..."
+[2]: https://cci.lbl.gov/cctbx_sources/mmtbx/monomer_library/pdb_interpretation.py?utm_source=chatgpt.com "https://cci.lbl.gov/cctbx_sources/mmtbx/monomer_li..."

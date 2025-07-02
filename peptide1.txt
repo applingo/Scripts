@@ -1,0 +1,203 @@
+### 基本方針
+
+1. **環状ペプチド全体を 1 つの化学コンポーネント (例: `CPE`) として辞書化**
+
+   * AceDRG／Grade2／eLBOW／JLigand などで PDB もしくは SMILES から初期の `*.cif` を作成
+
+     ```bash
+     # 例：Grade2（１コンフォーマ固定で出力）
+     grade2 cyclic_peptide.pdb  --resname CPE  --single_conformer  --just_cif
+     ```
+   * 出力された `CPE.restraints.cif` を手作業で調整して「主鎖だけをリジッド化」する。
+
+2. **「動かしたくない」主鎖トーションを “定数” に書き換える**
+   CIF の `loop_ _chem_comp_tor` で各トーションを定義します。
+
+   * **可変トーション**：`id`（ラベル）に名前を付ける
+   * **固定トーション**：`id` をピリオド `.` あるいは `CONST_…` にし、
+     `_chem_comp_tor.value_angle_esd` をごく小さく（0.1–1 ° 程度）設定
+     → これが「事実上のリジッドボディ拘束」です。
+     *MON\_LIB* 仕様では “ラベルが `.` なら**定数角**” と定義されています([ccp4.ac.uk][1])。
+     CCP4 の例では実際に `id '.'` が固定角として使われています([ccp4.ac.uk][2])。
+
+   ```cif
+   loop_
+   _chem_comp_tor.comp_id
+   _chem_comp_tor.id
+   _chem_comp_tor.atom_id_1
+   _chem_comp_tor.atom_id_2
+   _chem_comp_tor.atom_id_3
+   _chem_comp_tor.atom_id_4
+   _chem_comp_tor.value_angle
+   _chem_comp_tor.value_angle_esd
+   _chem_comp_tor.period
+   CPE  .  N1  CA1  C1  N2   -60.3   0.20  1
+   CPE  .  CA1 C1   N2  CA2  128.7   0.20  1
+   …
+   ```
+
+   * **側鎖は動かしたい**場合は、その χ 角だけラベル付きで残す（`value_angle_esd` を 20–30 ° 程度）。
+   * **完全に一体化**したいときは、主鎖・側鎖すべてを `id '.'` にし `value_angle_esd ≈ 0.1` にする。
+
+3. **その他の拘束**
+
+   * `bond`, `angle`, `plane`, `chirality` などは自動生成値で十分。
+   * ESD を緩めたい／締めたい場合はそれぞれの `…_esd` を編集。
+   * **拘束を無効化**したい行は `value_angle_esd` を 1 000 000 ° にすると *inactive* 扱いになります([gphl.gitlab.io][3])。
+
+4. **Coot で使う**
+
+   1. *File ▸ Restraints ▸ Read CIF Restraints* で修正済み `CPE.cif` を読み込む
+   2. *Real-space refine* / *Rigid-body fit* をしても主鎖はほぼ動かず、側鎖だけが調整される
+
+5. **リファインでも完全リジッド化したい場合**
+
+   * **REFMAC**
+
+     ```text
+     LIBIN  CPE.cif
+     RIDG GROUP (resi 201:207 and chain A)  ! ← CPE の範囲
+     ```
+   * **Phenix.real\_space\_refine / phenix.refine**
+
+     ```python
+     rigid_body = "chain A and resname CPE"
+     ```
+
+   CIF で主鎖を固定しておけば、“rigid\_body” キーワードを使わなくても形は保たれる。
+
+---
+
+#### よくある落とし穴
+
+| 症状                | 原因                             | 解決                             |
+| ----------------- | ------------------------------ | ------------------------------ |
+| リアルスペースリファインで輪が歪む | 固定したいトーションがラベル付きのまま（可変扱い）      | `id '.'` に変更し ESD を 0.1 ° くらいに |
+| リファインが発散する／行列が特異  | `value_angle_esd = 0` など極端に小さい | 0 は避け、0.1–0.5 ° に              |
+| Coot で χ 角が回らない   | 側鎖まで `id '.'` にしてしまった          | 動かしたい χ は名前付きで残す               |
+
+---
+
+### まとめ
+
+* **主鎖を動かさない** ⇒ `loop_ _chem_comp_tor` で該当トーションを **定数トーション**（`id '.'` + 小さな ESD）にする
+* 必要に応じ **側鎖だけ** を可変で残す
+* Coot／REFMAC／Phenix いずれでも同じ restrains CIF が使える
+* 自動生成＋最小限の手編集で、非天然環状ペプチドでも“壊れない”リファインが可能になります。
+
+[1]: https://www.ccp4.ac.uk/html/mon_lib.html?utm_source=chatgpt.com "MON_LIB (CCP4: Library) — CCP4 documentation"
+[2]: https://www.ccp4.ac.uk/html/mon_lib.html "MON_LIB (CCP4: Library) — CCP4  documentation"
+[3]: https://gphl.gitlab.io/grade2_docs/outputs.html?utm_source=chatgpt.com "Grade2 outputs - GitLab"
+
+はい、RDKit だけで **「PDB 中の MOL 残基から、いちばん大きい環（＝主鎖）に属する原子の PDB 原子名だけを抽出」** できます。
+流れとサンプルコードをまとめると次のようになります。
+
+---
+
+## アルゴリズムの流れ
+
+1. **PDB を読み込む**
+   `Chem.MolFromPDBFile` は PDBInfo を保持するので、後から原子名や残基名を取り出せます。
+
+2. **MOL 残基だけを取り出したサブ分子を作る**
+
+   * `GetPDBResidueInfo().GetResidueName()` で `"MOL"` を判定。
+   * フラグを立てて `Chem.PathToSubmol` でサブ Mol を生成。
+
+3. **リング（環）を列挙**
+
+   * `Chem.GetSymmSSSR(submol)` で環の集合（SSSR）を取得。
+   * その中で **原子数が最大** のリングを選ぶ → たいていこれがペプチドの主環（バックボーン）。
+
+4. **リング原子の PDB 原子名をリストアップ**
+
+   * 各原子の `GetPDBResidueInfo().GetName().strip()` を回収し、重複を除いて並べる。
+
+> ※ カルボニル酸素 (`O`) はトポロジー上リングに含まれません。
+> “N–CA–C(=O)–N” の **N–CA–C** がリングを構成し、O は外側にぶら下がる形になる点に注意してください。
+> O も一緒に欲しい場合は「リング原子に隣接する O」も追加で拾えば OK です（下のコード例に含めています）。
+
+---
+
+## サンプルコード（Python + RDKit）
+
+```python
+from rdkit import Chem
+
+def list_backbone_atoms_from_pdb(pdb_path, resname="MOL",
+                                 include_carbonyl_oxy=True):
+    # 1) 読み込み
+    mol = Chem.MolFromPDBFile(pdb_path, removeHs=False)
+    if mol is None:
+        raise ValueError("PDB 読み込み失敗。結合情報が欠けている可能性があります")
+    
+    # 2) MOL 残基の原子 index を取得
+    mol_atoms = [a.GetIdx() for a in mol.GetAtoms()
+                 if a.GetPDBResidueInfo() and
+                    a.GetPDBResidueInfo().GetResidueName().strip() == resname]
+
+    submol = Chem.PathToSubmol(mol, mol_atoms)
+
+    # 3) SSSR → 最大リング
+    rings = Chem.GetSymmSSSR(submol)
+    if not rings:
+        raise ValueError("リングが見つかりません。結合が閉じているか確認してください")
+    main_ring = max(rings, key=len)        # 最大サイズ
+
+    # submol の atom idx → 元 mol の atom idx に変換
+    sub_to_parent = {j: i for j, i in enumerate(mol_atoms)}
+    ring_parent_indices = [sub_to_parent[i] for i in main_ring]
+
+    # 4) PDB 原子名を取得
+    names = []
+    for idx in ring_parent_indices:
+        atom = mol.GetAtomWithIdx(idx)
+        name = atom.GetPDBResidueInfo().GetName().strip()
+        names.append(name)
+        # カルボニル O を追加したい場合
+        if include_carbonyl_oxy:
+            for nbr in atom.GetNeighbors():
+                if nbr.GetAtomicNum() == 8:  # O 原子
+                    names.append(nbr.GetPDBResidueInfo().GetName().strip())
+
+    # 重複を除き、元 PDB の並び順で
+    unique_names = []
+    seen = set()
+    for n in names:
+        if n not in seen:
+            unique_names.append(n)
+            seen.add(n)
+    return unique_names
+
+# 使い方例
+if __name__ == "__main__":
+    bb_atoms = list_backbone_atoms_from_pdb("cyclic_pep.pdb")
+    print("Backbone atoms:", bb_atoms)
+```
+
+### 出力イメージ
+
+```
+Backbone atoms: ['C1', 'C2', 'C3', 'C4', 'N5', 'C6', 'C7', 'N8', ... ]
+```
+
+---
+
+## 実装上の注意点
+
+| ポイント                  | 対処                                                                                                                          |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **PDB の結合情報が不足**      | RDKit は ATOM/HETATM だけではペプチド結合を自動認識できないことがあります。うまくリングが出来ない場合は、<br>`OBConversion`（Open Babel）や `pdbfixer` で結合を明示してから読むと確実です。 |
+| **水素を除外したい**          | `removeHs=True` で読み込むか、`mol.GetAtoms()` から `a.GetAtomicNum() != 1` を条件に除外します。                                               |
+| **複数コピー（同じ resname）** | residue ID（`GetResidueNumber()`、`GetChainId()` など）も合わせて判定すると混同を防げます。                                                        |
+| **O 原子を入れない場合**       | `include_carbonyl_oxy=False`、もしくは O 原子を加えるループを削除。                                                                           |
+
+---
+
+### まとめ
+
+* **RDKit の ring perception + PDBInfo** を組み合わせるだけで、環状ペプチドの“主鎖原子”を抽出できます。
+* **最大リングの原子集合**がほぼバックボーンに相当するので、原子名が連番でも問題ありません。
+* カルボニル酸素を含めたい場合は隣接 O を手動で追加。
+
+このスクリプトをベースに、CIF 編集や `reference_coordinate_restraints.selection` の生成を自動化すると作業が一気に楽になります。
