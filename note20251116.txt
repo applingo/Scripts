@@ -1,0 +1,6 @@
+phenix.real_space_refine model.pdb map.ccp4 resolution=3.2 \
+  refinement.run=minimization_global+local_grid_search \
+  reference_coordinate_restraints.enabled=True \
+  reference_coordinate_restraints.selection="chain X and resname MOL" \
+  reference_coordinate_restraints.sigma=0.01 \
+  real_space_target_exclude_selection="chain X and resname MOL"
