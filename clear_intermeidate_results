@@ -1,0 +1,33 @@
+cryosparcm の CLI で、プロジェクト単位で中間ファイルを一括削除できます。
+
+プロジェクト全体の中間結果を消すコマンド
+cryosparcm cli "clear_intermediate_results(project_uid='P3')"
+
+
+P3 のところを消したいプロジェクトの UID に置き換えてください（P1, P2 など）。
+
+job_uid=None のままなので、そのプロジェクト内の すべてのジョブの unused intermediate results が対象になります。
+guide.cryosparc.com
++1
+
+ワークスペース単位でやる場合
+cryosparcm cli "clear_intermediate_results(project_uid='P3', workspace_uid='W2')"
+
+
+P3, W2 を対象プロジェクト・ワークスペースの UID に変更。
+
+全プロジェクトでまとめてやりたい場合（例）
+
+公式に「全部一気に」の単一コマンドは無いので、icli 上でループさせるのが推奨されています。
+CryoSPARC Discuss
+
+cryosparcm icli
+
+
+icli の Python プロンプト内で：
+
+for p in list_projects():
+    clear_intermediate_results(project_uid=p['uid'])
+
+
+※どの方法でも「final result」とマークされている最終結果は保持され、中間の反復結果などだけが消える仕様です。実行前に必ずバックアップ or 対象プロジェクトをよく確認してから走らせるのがおすすめです。
