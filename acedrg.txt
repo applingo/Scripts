@@ -947,3 +947,186 @@ CYC を「1 残基 LIG」としているのか
 11 個の非天然アミノ酸残基として伸ばしているのか
 
 を教えてもらえれば、それぞれの場合に 一番ラクな torsion バイアスのかけ方（.eff の具体例） まで書きます。
+
+reference_coordinate_restraintsRestrains coordinates in Cartesian space to stay near their starting positions. This is intended for use in generating simulated annealing omit maps, to prevent refined atoms from collapsing in on the region missing atoms. For conserving geometry quality at low resolution, the more flexible reference model restraints should be used instead.
+enabled = False
+exclude_outliers = True
+selection = all
+sigma = 0.2
+limit = 1
+top_out = False
+
+は本当にtorsion のみに効いているのでしょうか？
+ChatGPT:
+思考時間: 39s
+
+いいところ突いてきますね。
+
+結論だけハッキリ言うと：
+
+いま引用されている reference_coordinate_restraints は
+「xyz 座標にバネを付ける」もので、torsion だけじゃなく 全部 に効きます。
+
+さっき「torsion だけ」と言っていたのは reference_model restraints の話で、
+reference_coordinate_restraints はまったく別物です。
+
+1. reference_coordinate_restraints は何者か
+
+Phenix の説明そのものがこうなっています：
+
+Restrains coordinates in Cartesian space to stay near their starting positions.
+This is intended for use in generating simulated annealing omit maps…
+
+つまり、
+
+各原子について
+「(x, y, z) がスタート座標からどれだけ動いたか」に対してハーモニックポテンシャルを掛ける
+
+これは内部座標（bond / angle / torsion）を見ているのではなく、
+完全に デカルト座標レベル の拘束
+
+なので結果として：
+
+bond 長・angle・torsion・相互距離…
+あらゆる自由度を “元の座標付近” に縛る 効果になります
+
+パラメータの意味も「座標バネ」前提です：
+
+sigma = 0.2 → 「0.2 Å くらいのズレまでは強く戻す」
+
+limit = 1.0 → top-out で「1 Å 以上ズレたらそれ以上ペナルティ増やさない」上限
+
+など、全部 xyz の距離単位 で定義されています。
+
+なので、これは
+
+torsion だけをやさしく参照モデルに寄せる機構ではない
+
+です。
+「座標をほぼ固定したい」「SA omit map でモデルが空洞に落ち込むのを防ぐ」ための バネ です。
+
+2. torsion だけを参照に寄せるのはどれか？
+
+ここで出てくるのが reference_model restraints です。
+
+Phenix FAQ にはっきり：
+
+reference-model method … adds restraints on torsion angles to the geometric target function.
+
+Reference model restraints use the dihedral angles of an existing structure as restraints on the input model conformation…
+
+つまり、
+
+reference_model → torsion（dihedral）だけを参照モデルに寄せる
+
+bond / angle / planarity の理想値は、monomer library（＝今回なら AceDRG cif）側から来るまま
+
+“top-out” ポテンシャルで、差が大きくなった torsion は自然に解放する
+
+という仕様です。
+
+私が「torsion だけ」と言っていたのは この reference_model の方の話でした。
+
+3. じゃあどう使い分けるのが良いか？
+
+ざっくり整理すると：
+
+reference_coordinate_restraints
+
+xyz をスタート座標の近くに拘束（全 DOF に効く）
+
+SA omit map などで、「モデルが空洞に崩れ込まないように」使うもの
+
+ligand に使うと、ほぼ今の座標から動かなくなるイメージ
+
+reference_model
+
+参照モデルの torsion を使って、現在の torsion にペナルティを足す
+
+bond/angle/plane は通常の辞書（AceDRG など）に任せる
+
+低分解能で geometry を守りつつ、ある程度の柔軟性を持たせたいとき向き
+
+4. あなたの 11mer のケースだと
+
+「MDFit のコンフォメーションは尊重したいが、
+bond/angle は AceDRG の統計に従わせたい」
+
+というゴールですよね。
+
+その意味では：
+
+reference_coordinate_restraints を 11mer に掛けるのは重すぎる
+→ bond/angle も含めて座標をほぼ固定する方向に働く
+
+やるなら
+
+bond/angle/plane：AceDRG 辞書
+
+torsion：
+
+まずは reference_model を使う（本当に効いているか .geo で確認）
+
+足りなければ、gREST/MDFit から欲しい torsion だけ geometry_restraints.edits で手書き
+
+という方向の方が、目的には合っています。
+
+まとめ
+
+引用されている reference_coordinate_restraints は デカルト座標バネであり、
+torsion 限定ではなく、すべての自由度をスタート座標の近くに縛る。
+
+torsion だけを参照モデルに寄せるのは reference_model restraints の方。
+
+11mer 環状ペプチド + AceDRG + MDFit という状況では、
+reference_coordinate_restraints は「ほぼ固定したい時の奥の手」であって、
+普通は reference_model＋辞書（AceDRG）をベースに考えるのが良さそうです。
+
+もし .eff とログの一部を貼ってもらえれば、
+「この設定だと実際にどの torsion / atom が restraint されてるか」を一緒に読み解きます。
+
+あなた:
+reference model はreal space refine で使用できますか？
+ChatGPT:
+思考時間: 15s
+
+はい、reference_model は phenix.real_space_refine でも使えます。
+
+公式マニュアルに、real_space_refine での reference_model 使用例がそのまま載っています：
+
+phenix.real_space_refine model.pdb map.mtz reference.eff
+
+
+reference.eff の中でこんな感じに書きます：
+
+reference_model {
+  enabled = True
+  reference_group {
+    reference = chain Z
+    selection = chain A
+    file_name = reference_model_1.pdb
+  }
+  reference_group {
+    reference = chain C
+    selection = chain B and resseq 123:321
+    file_name = reference_model_2.pdb
+  }
+}
+
+
+これで torsion 角に対してだけ 参照モデル拘束が入ります（bond/angle は通常どおり辞書由来）。
+
+file_name を省略し use_starting_model_as_reference=True にすると、「自分自身（入力モデル）」を参照として使うこともできます。
+
+一方で、さきほど引用されていた
+
+reference_coordinate_restraints { ... }
+
+
+の方は 座標そのもの (x,y,z) にバネを付ける別の仕組みで、torsion 限定ではありません（real_space_refine でも同じ意味）。
+
+なので：
+
+はい、reference_model restraints は real_space_refine で使えます。
+
+使うときは .eff に reference_model { ... } を書いて、phenix.real_space_refine model.pdb map.mtz that.eff のように渡せば OK です。
