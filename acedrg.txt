@@ -1,0 +1,949 @@
+acedrg はsmilesからでも拘束ファイルを作れると思いますが、それはacedrgにはスマイルズの辞書があってそれにbondやangle planarity などの情報が入っていてそれを検索してきてbond やangleを割り当てているのでしょうか？
+ChatGPT:
+思考時間: 1m 19s
+
+ざっくり言うと、
+
+「SMILES そのものの辞書」ではなく、
+「COD 由来の 原子タイプごとの幾何パラメータ表 を持っていて、
+SMILES は“分子の骨格情報”を渡すための入力フォーマットにすぎない
+
+というイメージです。
+
+AceDRG が SMILES から restrain を作る流れ
+
+論文や CCP4 の解説をまとめると、AceDRG はだいたい次のように動いています。
+PMC
++2
+IUCr Crystallography Journals
++2
+
+SMILES を RDKit で解釈
+
+AceDRG は RDKit を使って SMILES から
+
+原子の種類
+
+結合の有無・結合次数（単結合/二重結合/芳香族など）
+
+環構造、芳香環、ハイブリダイゼーション
+を認識します。
+PMC
++1
+
+この段階では、まだ「結合長はいくつ」などの 数値 は決まっていません。
+ただの「化学構造のグラフ」です。
+
+局所環境ベースの「AceDRG 原子タイプ」を決める
+
+各原子について
+
+元素
+
+ハイブリダイゼーション（sp, sp2, sp3）
+
+芳香環かどうか
+
+何員環か（5員環, 6員環…）
+
+隣接原子の種類
+など、局所環境を符号化した原子タイプ（AceDRG 独自）が割り振られます。
+PMC
++2
+サイエンスダイレクト
++2
+
+つまり「C(sp2)・6員芳香環・隣に N(sp2) がいる」みたいな情報を持ったタイプになります。
+
+COD から作られた “結合・角度テーブル” を検索
+
+AceDRG 開発時に、Crystallography Open Database (COD) の小分子 CIF を大量に解析して、
+
+各原子タイプペアの結合長の分布
+
+各原子タイムトリプレットの結合角の分布
+の統計テーブルが事前に作られています。
+PMC
++2
+IUCr Crystallography Journals
++2
+
+AceDRG は新しいリガンドに対して、
+
+「この結合は AtomTypeA–AtomTypeB のペアだから、そのテーブルの平均値と σ を使う」
+
+「この角度は AtomTypeA–AtomTypeB–AtomTypeC のトリプレットだから、そのテーブルの平均角度と σ を使う」
+という形で、一般化された統計から理想値を引いてくるイメージです。
+CCP4 Cloud
++1
+
+⇒ ここで使っているのは 「SMILES の辞書」ではなく、「原子タイプごとの統計テーブル」 です。
+
+Planarity（平面拘束）の扱い
+
+COD 由来のデータと原子タイプから、
+
+芳香環
+
+共役系
+
+その他「ほぼ平面とみなすべき」グループ
+を認識して、plane group として mmCIF に平面拘束を入れます。
+PMC
++1
+
+これも「この原子タイプの組は通常平面なので plane に入れる」といったルール＋統計に基づいています。
+
+Torsion（ねじれ角）について少し
+
+結合／角度ほど統計的に強く縛られていないため、
+
+COD からの情報
+
+汎用的な理想値（例：60°/120°/180°）
+の組み合わせで torsion restraint を入れていますが、
+結合・角度に比べると「よりヒューリスティック」な部分も残っています。
+IUCr Crystallography Journals
++1
+
+そのため糖のような系では、Privateer などで torsion を後からパッチして精度を上げる、といったワークフローもあります。
+IUCr Crystallography Journals
+
+まとめ（質問への直接の答え）
+
+Q. AceDRG には SMILES ごとの辞書があって、そこに bond/angle/planarity 情報が入っている？
+
+A. いいえ。
+AceDRG が持っているのは「SMILES 辞書」ではなく、
+「COD から抽出した 原子タイプごとの幾何学統計テーブル」です。
+
+SMILES は 構造（結合関係・結合次数）を伝えるための入力フォーマット。
+
+その構造から AceDRG 独自の原子タイプを割り振り、
+
+その原子タイプに応じて COD 由来のテーブルから bond length, angle, planarity, torsion を引き当てて restrain を作る、という仕組みになっています。
+
+もし良ければ、
+
+「非天然 11 残基環状ペプチドのような “中分子” で AceDRG の統計がどこまで信頼できるか」
+
+「COD に無いような変な環／官能基の扱いをどう補完するか」
+
+みたいな話も掘り下げられますが、そのあたりも気になってますか？
+
+あなた:
+原子タイプとはなんですか？
+非天然 11 残基環状ペプチドのような “中分子” で AceDRG の統計がどこまで信頼できるかを知りたいですが、局所的には正しいがtorsionで問題があるかもという答えと想像します
+ChatGPT:
+思考時間: 1m 18s
+
+一言でいうと、
+
+原子タイプ =「その原子の“局所環境”を符号化したラベル」
+（元素＋ハイブリダイゼーション＋リング/芳香性＋隣接原子…をまとめた「カテゴリー名」）
+
+です。AceDRG はこの「原子タイプ」ごとに COD から統計を取って、結合長・結合角・平面性などの restrain を引いてきます。
+PMC
++2
+CCP4 Cloud
++2
+
+1. 「原子タイプ」とは何か（一般論 → AceDRG）
+一般的な意味
+
+同じ炭素でも、化学的には全然違う振る舞いをしますよね：
+
+メチル基の C（sp³・単結合）
+
+カルボニル C（sp²・C=O を持つ）
+
+芳香環の C（sp²・芳香族）
+
+アミド C=O の C（sp²・C–N に共役）
+
+これらを 「全部 C だけど、周りの環境が違うので別タイプとして扱おう」
+というのが atom type の発想です。
+
+つまり「元素だけでなく、局所的な結合環境まで含めてラベル付けしたもの」が原子タイプです。
+力場（AMBER の CT, C, CA とか）にも同じ概念がありますが、AceDRG 版の atom type はそれをもっと細かくしたものだと思ってください。
+
+AceDRG の場合の原子タイプ
+
+AceDRG の原子タイプには、ざっくり次のような情報が入っています：
+CCP4 Cloud
++1
+
+元素（C, N, O, …）
+
+ハイブリダイゼーション状態（sp, sp², sp³ …）
+
+小さな環かどうか（最大 7 員環まで）
+
+芳香環かどうか
+
+近傍原子の種類・結合次数（隣は N(sp²) か？O(sp²) か？単結合か二重結合か？…）
+
+COD の小分子構造を全部なめて、
+
+こういう環境の炭素 → これを atom-type A と呼ぶ
+
+こういう環境の窒素 → atom-type B
+
+…
+
+という形で 26 万種類以上の atom type を自動生成して分類しています。
+epublications.vu.lt
+
+そのうえで、COD 中の すべての結合・角度 を
+
+「原子タイプの組み合わせ」で分類し
+
+各クラスについて平均値＆標準偏差（結合長 / 結合角の分布）
+
+をテーブル化してあります。
+PMC
++1
+
+AceDRG が新しいリガンド（あなたの SMILES）を読むと：
+
+SMILES から結合関係と結合次数を解釈（RDKit）
+
+各原子に「AceDRG 原子タイプ」を割り当てる
+
+「原子タイプの組み合わせ」に対応する COD 統計テーブルを引いて
+→ bond 長・angle・平面群などの理想値＋σ を mmCIF に書き出す
+
+という流れになっています。
+MRC Laboratory of Molecular Biology
++2
+GitLab
++2
+
+2. 非天然 11 残基環状ペプチドで AceDRG はどこまで信用できるか？
+
+あなたの想像どおり、
+
+「局所的な bond / angle / planarity はかなり良いが、torsion は弱い」
+
+という理解でほぼ合っています。もう少し分解して書きます。
+
+2-1. Bond / angle / planarity について
+
+ここは AceDRG をかなり信用してよい領域 だと思います。
+
+COD にはペプチド様の構造（短いペプチド・アミド・カルボニル・各種側鎖フラグメント）が山ほど入っている
+
+AceDRG は 局所環境ベース なので、分子全体が 1000 Da だろうが 200 Da だろうが、
+「アミド C=O まわり」「sp³ CH₂」「芳香環 C」など、局所構造さえ似ていれば同じ統計を流用できる
+CCP4 Cloud
++1
+
+そのため、
+
+C–N（アミド結合）
+
+C=O–N まわりの平面性
+
+芳香環、共役系の平面群
+
+通常の sp³ C–C, C–N, C–O の結合長・角度
+
+などは、非天然ペプチドでもほぼ正しい値を出してくれます。
+
+例外としては：
+
+COD にほとんど現れないような「かなり奇妙な官能基」「金属配位」「超ひずんだ小環」などでは
+
+対応する原子タイプが疎
+
+or より汎用的な atom type にフォールバック
+→ σ がやたら大きい/怪しい値になる可能性
+
+しかし「非天然アミノ酸ベースの環状 11mer」くらいなら、
+原子タイプの“局所的な”統計としては十分実用的というのが現実的な評価だと思います。
+epublications.vu.lt
+
+2-2. Torsion（ねじれ角）について
+
+ここが一番 弱い＆危険ゾーン です。
+
+AceDRG は主に bond / angle / plane の統計に力を入れており、
+torsion については
+
+COD 由来の統計＋
+
+いくつかの一般的なヒューリスティック（0 / ±60 / 180° など）
+に基づく、わりと粗めの扱いです。
+PMC
++1
+
+特に、
+
+タンパク質の Ramachandran みたいな 「φ/ψ の許容領域」 は持っていない
+
+「マクロサイクルとしてこのねじれがエネルギー的に有利」といった
+長距離的な立体効果は一切見ていない
+
+結果として：
+
+ペプチド結合の ω（ほぼ 180° or 0°） は C–N–C=O の平面性からかなり強く縛られるので OK
+
+しかしその他の φ/ψ や側鎖 torsion、リングを閉じている橋の torsion などは
+「そこそこ合理的だけど、本当にそのペプチドとして最も安定かは怪しい」
+程度にしか縛られません。
+
+特に 環状 11mer のようなマクロサイクルでは：
+
+結合長・結合角・平面は局所的に正しくても、
+
+“輪っか全体としてのひずみ・preferred torsion パターン” は
+AceDRG の辞書だけではほとんど表現できません。
+
+なので、
+
+「局所的には bond / angle は正しいが、torsion でダメコンフォーマーが混ざりうる」
+
+というあなたの直感はかなり的を射ています。
+
+3. 実務的にはどう使うか（この系の場合）
+3-1. 何を AceDRG に任せてよいか
+
+bond 長：基本おまかせで良い
+
+angle：同上
+
+planarity（アミド、芳香環、共役系）：同上
+
+ここは COD ベースの統計が効いているので、
+自前で QM や MD をやっても、ほぼ同じオーダーの値に落ち着くことが多いはずです。
+
+3-2. どこを疑うべきか / 補強すべきか
+
+torsion restraint
+
+特に
+
+マクロサイクルを閉じている “ブリッジ”周り
+
+明確なコンフォメーション選択性がある非天然アミノ酸（例：N-Me、β-アミノ酸、コンフォ制御側鎖など）
+の torsion は、AceDRG のデフォルトから大きくずれてもおかしくないです。
+
+あなたのように
+
+gREST + カスタム力場 で多数のコンフォーマーをサンプリングしている
+
+のであれば、
+
+bond/angle/plane は AceDRG に任せる
+
+torsion については、原則として “弱く縛る or 外す”
+
+もしどうしても torsion restraint を入れたい場合は
+
+gREST から得た主クラスタの torsion 分布（平均と分散）を見て、
+
+重要な数本だけ geom_restraints.edits（Phenix）や REFMAC の RIDGE DIHedral などで
+手で追加する
+
+というスタンスが、一番筋が良いと思います。
+
+3-3. 「中分子」であること自体はあまり問題ではない
+
+AceDRG の統計が見ているのはほぼ 局所環境 なので、
+
+「分子量 1000 のリガンドだから精度が落ちる」というわけではなく、
+
+「局所環境が COD に類似するものかどうか？」の方が重要です。
+PMC
++1
+
+非天然アミノ酸と言っても、
+
+結局は「アミド + 芳香環 + アルキル鎖 + ヘテロ原子」という組み合わせであることが多いので、
+
+その意味では bond/angle の統計は十分にカバーされていることが多いです。
+
+ざっくり結論
+
+原子タイプ = 「元素＋ハイブリダイゼーション＋リング/芳香性＋隣接原子などをまとめた“局所環境ラベル”」
+
+AceDRG は COD の小分子から、この原子タイプごとに bond/angle/plane の統計を作って restrain を生成している。
+
+非天然 11mer 環状ペプチドでは：
+
+bond / angle / planarity は AceDRG の統計をかなり信用してよい
+
+ただし torsion はエネルギー面・マクロサイクル特有の好みを反映しきれないので、
+gREST + 力場由来の情報で補う／弱くするのが現実的。
+
+もし次に進めるなら、
+
+「gREST から得た torsion 分布をどう restraint に落とすか」
+
+「AceDRG 辞書＋ MD-derived restraints を Phenix / REFMAC / Servalcat にどう組み込むか」
+
+みたいな “実装編” も一緒に整理できます。
+
+あなた:
+acedrg elbow gradeの特徴とメリットデメリットを教えてください
+ChatGPT:
+思考時間: 1m 9s
+
+ざっくりまとめると、
+
+AceDRG：COD 統計ベースの「データ駆動 restrain ジェネレータ」
+
+eLBOW：QM 最適化ベースの「1個の分子をちゃんと最小化して restrain にする」ツール
+
+GRADE / Grade2：CSD + Mogul（＋必要なら QM）ベースの「かなりリッチな小分子幾何辞書」
+
+という位置づけです。
+
+1. AceDRG
+
+特徴
+
+小分子結晶データベース COD から抽出した統計を元に、
+原子タイプごとの bond 長・angle・plane をテーブル化し、そこから restrain を作る。
+PMC
++2
+MRC Laboratory of Molecular Biology
++2
+
+入力：SMILES, MOL2, SDF, mmCIF など。
+
+出力：理想座標＋ restraint mmCIF（REFMAC, Servalcat, Coot などでそのまま使用）。
+CCP4 Cloud
++1
+
+局所環境ベース原子タイプ（元素・ハイブリダイゼーション・小環/芳香性・隣接原子など）で統計を引く。
+PMC
++2
+lifewp.bgu.ac.il
++2
+
+メリット
+
+速い・安定：ほぼテーブル lookup なので巨大リガンドでも一瞬。
+
+COD 由来の 実測構造に基づいた bond/angle/plane → 局所幾何はかなり信頼できる。
+PMC
++1
+
+CCP4/Servalcat の標準ツールとして統合されており、
+最近の cryo-EM/結晶構造解析でデファクト化しつつある。
+research.kek.jp
++1
+
+SMILES から直接いけるので、非天然アミノ酸・中分子にも適用しやすい。
+
+デメリット
+
+torsion の扱いは比較的弱い：
+bond/angle に比べて、コンフォメーション依存性を細かくキャプチャしていない。
+特にマクロサイクル・中分子ペプチドでは「輪としての preferred torsion」を反映しにくい。
+PMC
++1
+
+使っている統計源が COD のみ →
+COD にほとんど出てこないような特殊官能基・金属配位などは品質が落ちる/汎用値にフォールバック。
+PMC
+
+金属複合体や超変態的な骨格は自分でチェックが必要。
+
+2. eLBOW (PHENIX)
+
+特徴
+
+electronic Ligand Builder and Optimization Workbench。PHENIX に標準搭載。
+phenix-online.org
++1
+
+入力：SMILES, MOL2, PDB, CIF など。
+
+内部で
+
+RDKit 等でトポロジー構築
+
+その構造を QM（AM1/MOPAC, Gaussian 等）や簡易 FF で最適化
+して、最小エネルギー構造から restrain を作る設計。
+OSTI
++1
+
+メリット
+
+QM 最適化ベースなので、その分子に固有の
+
+bond/angle
+
+torsion（特に非標準な共役系や intramolecular H-bond を含む系）
+をきちんと反映しやすい。
+OSTI
++1
+
+PHENIX 環境との統合が良く、phenix.refine 実行中に自動で呼ばれることも多い。
+phenix-online.org
++1
+
+座標生成・電荷（ESP 由来）も同時に行えるので、MD や QM/MM への橋渡しにも使える。
+
+デメリット
+
+遅い：まともに QM を回すと、特に 11mer 環状ペプチドクラスでは重い。
+
+結果が 1つの QM 局所最小に依存 →
+コンフォメーション・エネルギー面を平均化した「統計的 restrain」ではなく、
+「その 1 構造を強く支持する restrain」になりがち。
+febs.onlinelibrary.wiley.com
++1
+
+最初のプロトン化状態・立体化学を自分でちゃんと指定しないと、
+「間違った分子を厳密に最適化」してしまうリスク。
+phenix-online.org
++1
+
+Phenix 外（CCP4/Servalcat/BUSTER）で使う場合は、若干ワークフローがややこしい。
+
+3. GRADE / Grade2（Global Phasing）
+
+特徴
+
+Global Phasing (BUSTER, Rhofit) の ligand restraint ジェネレータ。
+
+GRADE の後継が Grade2 で、CSD Python API + RDKit でゼロから書き直された最新版。
+GitLab
++1
+
+主な情報源：
+
+CSD（Cambridge Structural Database）の小分子構造 + Mogul 統計（bond/angle/torsion）
+
+（必要に応じて）QM/minimization 補完。
+GitLab
++1
+
+メリット
+
+CSD（COD より curated & rich）ベースなので、
+小分子の幾何 restrain の質は非常に高いとよく言われる。
+IUCr Crystallography Journals
++1
+
+Grade2 は Grade より
+
+環・平面の扱いが改良（big_planes オプションなど）
+GitLab
++1
+
+対応元素が増え、異常系にも強くなった
+
+2893 wwPDB 化合物のテストで 99.8% 成功など、ロバストさが高い。
+globalphasing.com
+
+default でも torsion を Mogul 統計からそれなりに賢く入れてくれるので、
+一般的なドラッグライク小分子では「とりあえず Grade2でOK」感が強い。
+GitLab
++1
+
+BUSTER 以外でも、生成した dictionary は REFMAC, PHENIX などで利用可能。
+
+デメリット
+
+CSD 利用の都合で、商用ライセンス周りがやや重め（Grade web サーバはあるが、社外秘化合物では注意）。
+IUCr Crystallography Journals
++1
+
+かなり「小分子志向」なので、
+
+1000 Da クラスの環状ペプチドなど、“タンパク質寄り” の中分子には
+そのままだと torsion などが最適とは限らない。
+
+metal 配位など特殊系は、結局自分でチェック＆編集が必要なのは他と同じ。
+
+BUSTER を常用していない環境だと、導入そのもののハードルが少し高い。
+
+4. ざっくり比較表
+ツール	データソース / 原理	強み	弱み・注意点
+AceDRG	COD 統計 + 原子タイプ 
+PMC
++1
+	速い / CCP4・Servalcat標準 / 局所幾何が良い	torsion が弱い / COD にない化学には注意
+eLBOW	QM/FF 最適化（個別分子） 
+OSTI
++1
+	その分子固有のエネルギー面を反映 / PHENIXとの統合	遅い / 1コンフォ最小依存 / 初期構造・プロトン化の指定が重要
+GRADE2	CSD + Mogul + RDKit + （必要ならQM） 
+GitLab
++2
+globalphasing.com
++2
+	高品質な小分子幾何 / torsion も強い / ロバスト	ライセンス / 小分子寄りの設計 / 中分子やペプチドでは要検証
+5. ご質問の「非天然 11 残基環状ペプチド」の文脈で
+
+あなたのケース（非天然アミノ酸 11mer 環状ペプチド + gREST/MD 情報あり）に限って言うと、私の感覚は：
+
+AceDRG
+
+bond/angle/plane はかなり信用して良い
+
+torsion は「弱めに」「MD や gREST の結果で補完」する前提で使う
+
+eLBOW
+
+11mer クラスを QM 最適化するのはコスト高
+
+「この 1 コンフォーマーを強く restrain したい」ケースならアリだが、
+あなたのように gREST で ensemble を持っている場合は、
+むしろ eLBOW の「単一最小」バイアスが邪魔になる可能性
+
+GRADE/Grade2
+
+ペプチドというより「大きめ小分子」とみなして、
+ローカルな幾何を整えるには有用
+
+ただし 11mer 環状ペプチドのグローバル torsion/マクロサイクル挙動までは
+やはり捕まえきれないので、AceDRG と同様「局所幾何用」と割り切る
+
+なので、
+
+局所幾何（bond/angle/plane）は AceDRG or Grade2 に任せて、
+マクロサイクルとしての torsion は gREST+力場から導いた情報を、
+必要な所だけ手パッチする
+
+というハイブリッド戦略が、一番理にかなっていると思います。
+
+もし次にやるなら、
+
+「gREST から抽出した torsion 分布を、具体的に Phenix/Servalcat にどう書き込むか」
+
+「AceDRG/Grade2 cif に対して torsion だけ上書きする実務的ワークフロー」
+
+あたりを一緒に設計していきましょう。
+
+あなた:
+クライオ電顕マップに11mer環状ペプチドモデルをMDFitでフィットしそこそこ良いモデルができた後にreal_space_refineで精密化を行いたいと考えています。
+そのための拘束ファイルです。どれで作るのが手軽で良いでしょうか？
+現在あるMDfit構造のジオメトリーをそのままelbow --final_geometry で拘束cifを作るのが第一案。もっと凝るならtorsionはelbow --final_geometry, bond angle planarity は acedrgで得たものを使うとかどうでしょうか？ベストな方法を考えてください。GRADEは契約していますがCSDハ契約していません
+
+ChatGPT:
+思考時間: 3m 51s
+
+結論から言うと、この 11mer 環状ペプチド＋cryo-EM RSR という状況なら：
+
+局所ジオメトリ（bond / angle / planarity）：AceDRG に全部任せる
+
+コンフォメーション（torsion）：辞書でゴリゴリ固定するのではなく、
+phenix.real_space_refine の reference_model restraints で MDFit モデルに寄せる
+
+…という組み合わせが、一番「手軽さ × 品質」のバランスが良いと思います。
+ご提案の「elbow --final_geometry で全部決める」や「torsion だけ eLBOW、あとは AceDRG」は“やり過ぎ気味／面倒”寄りです。
+
+1. 各ツールの性格をこのケースに当てはめると
+AceDRG
+
+COD から atom type を決めて、そこから bond 長 / angle / 平面 / chiral / torsion を生成する仕組み。
+lifewp.bgu.ac.il
++1
+
+bond / angle / planarity はかなり安定していて、一般的には「ここは AceDRG を信じてよい」領域。
+
+一方、torsion は「汎用的な値」であり、実際の低エネルギーコンフォーマーとは数十度ずれることがある（糖の例で指摘されています）。
+IUCr Crystallography Journals
+
+→ 局所構造は良いが、macrocycle の「どのコンフォメーションか」を決める力は弱い。
+
+eLBOW（--final_geometry）
+
+--final_geometry を付けると、「入力 PDB のジオメトリをそのまま『理想値』として辞書に焼き込む」モードになります。
+Phenix
++1
+
+MDFit 後の構造を入れると：
+
+その時点での bond/angle/torsion の値＝ideal と見なされる
+
+real_space_refine で geometry weight を普通にかけると、その構造からほとんど動かなくなる
+
+つまり MDFit モデルをほぼ固定したいときの最終手段 には向きますが、
+
+MD やマップのノイズで少し歪んでいたとしても、それも「理想値」として固定されてしまう
+
+「マップも見ながら少しは動かしたい」という用途には強すぎる
+
+Grade
+
+Grade / Grade2 は Mogul＋QM を組み合わせた、かなり良質な辞書ジェネレータですが、
+ローカルでフル機能を使うには CSD ライセンスが必要です。
+grade.globalphasing.org
++1
+
+Web サーバはありますが、11mer 非天然ペプチドだと機密的に出しづらいでしょうし、
+それなら AceDRG＋MD 情報で十分戦えると思います。
+
+2. ユーザー案の評価
+案1：MDFit 構造に対して elbow --final_geometry で辞書を作る
+
+利点
+
+最も簡単で、一発で「今の構造を守る辞書」ができる。
+
+分解能がかなり悪くて（>4–5 Å）、密度があまり頼りにならず、
+「ほぼ MDFit の形を維持したい」なら悪くない。
+
+欠点
+
+MDFit 後の歪み・ノイズも全部「ideal」となる。
+
+cryo-EM マップがそこそこ良い場合、マップに合わせて微調整したくても、辞書が強すぎて動かない。
+
+一般論として「理想値はモデルから独立に決めるのが望ましい」ので、レビューで嫌がられる類いの設定です。
+PMC
++1
+
+→ 個人的には「解像度がかなり低い」「とにかくこのコンフォメーションを凍結したい」ケースの奥の手。
+
+案2：torsion は elbow --final_geometry、bond / angle / plane は AceDRG
+
+コンセプトとしてはすごく筋が良いです：
+
+局所ジオメトリ（bond/angle/plane）→ AceDRG（COD 統計ベースで信頼できる）
+
+大スケールのコンフォメーション（torsion）→ MDFit / MD の結果を反映
+
+ですが、実装がちょっと面倒です：
+
+AceDRG から SMILES で辞書 (A.cif) を作る
+
+MDFit した LIG だけ抜いた PDB に対して phenix.elbow --final_geometry をかけて B.cif を作る
+
+REEL やテキスト編集で
+
+A.cif の dihedral section を disable / 削除
+
+B.cif の dihedral だけを A.cif にコピー
+
+その合体 cif を phenix.real_space_refine に渡す
+
+技としてはアリですが、
+
+cif 編集の手間＆ヒューマンエラー
+
+将来 ligand が変わるたびに同じ作業が必要
+
+を考えると、「手軽」とは言いづらいかな…という印象です。
+
+3. おすすめの「手軽でそれなりにベスト」なやり方
+ステップ1：AceDRG で基本辞書を作る
+
+SMILES か MOL2 から：
+
+acedrg << EOF
+SMILES <your_smiles_here>
+RESID CYC           # 11mer 用の3文字コード
+EOF
+
+
+あるいは CCP4i2 / Coot の Make Ligand タスクで同じことをやって
+CYC.cif と CYC.pdb を得る。
+MRC Laboratory of Molecular Biology
++1
+
+これで bond / angle / plane / torsion を一通り含んだ辞書ができます。
+
+torsion の ideal 値は「汎用的」なので、コンフォメーションの “押さえ” は弱めくらいに理解しておく。
+
+ステップ2：MDFit したモデルを start model にして real_space_refine
+phenix.real_space_refine model_MDFit.pdb map.ccp4 resolution=3.2 \
+  CYC.cif \
+  reference.eff
+
+
+reference.eff には、reference_model restraints を 11mer に対して有効化する設定を書きます：
+
+reference_model {
+  enabled = True
+  use_starting_model_as_reference = True
+  # 11mer 環状ペプチドに対応する selection
+  reference_group {
+    selection = "chain Z and resname CYC"
+  }
+  # torsion をどの程度きつく MD に寄せるか
+  sigma = 1.0     # 小さいほど MDfit に強く引っ張る
+  limit = 15      # 何度まで torsion 差にペナルティをかけるか
+}
+
+
+use_starting_model_as_reference=True にすると、入力モデル自身を torsion の参照モデルとして使います。
+Phenix
++1
+
+これは Headd et al. の「reference-model torsion restraints」機構で、
+torsion に top-out potential（ある角度差までは強く、それ以上ズレたら急に弱くなる）をかけるので、
+マップが明確に違うコンフォメーションを要求している場合は、ちゃんとそちらに行ってくれます。
+ResearchGate
++1
+
+一方で、マップがあいまいな領域では MDFit コンフォメーションの近くにとどまる。
+
+これで実質的に
+
+bond/angle/plane：AceDRG の COD ベース統計
+
+torsion：AceDRG の汎用値＋「MDFit torsion からあまり離れないように」という reference-model 項
+
+というハイブリッドが 辞書編集なしで 実現できます。
+
+4. いつ --final_geometry を使うか？
+
+それでも elbow --final_geometry を使いたい状況は例えば：
+
+分解能が 4.5–5 Å 以上で、ligand の density は「塊が見える程度」
+
+gREST＋力場の校正をかなり真面目にやっており、「MD コンフォメーションをほぼ固定してよい」と思っている
+
+レビューアに「これは MD で得た安定構造をそのまま使っています」と明示する気がある
+
+そんなときは：
+
+phenix.elbow --final_geometry MDFit_ligand_only.pdb --id CYC
+
+
+で作った CYC.cif を使う、という運用もアリです。
+ただしその場合は ほぼ MDFit の形を凍結する覚悟、というイメージで。
+
+まとめ
+
+私の推しルート
+
+SMILES → AceDRG で 11mer 用辞書（bond/angle/plane はこちらに任せる）
+
+phenix.real_space_refine で
+
+reference_model.use_starting_model_as_reference=True
+
+selection を 11mer のみ（chain/resname で指定）
+
+必要に応じて reference_model.sigma / limit を調整
+
+elbow --final_geometry は
+
+「ほとんど動かしたくない」「超低分解能」という特殊ケースのオプション
+
+torsion を AceDRG と差し替えるハイブリッド辞書は理論的には良いが、
+cif 編集が面倒なので、まずは reference_model で十分だと思います。
+
+もし「分解能が 何 Å / 11mer の鎖の定義がこうなっている」といった具体情報があれば、
+reference_model の selection や weight の値までかなりピンポイントに詰めた .eff を書いてみます。
+
+あなた:
+reference_model {
+  enabled = True
+  use_starting_model_as_reference = True
+  # 11mer 環状ペプチドに対応する selection
+  reference_group {
+    selection = "chain Z and resname CYC"
+  }
+  # torsion をどの程度きつく MD に寄せるか
+  sigma = 1.0     # 小さいほど MDfit に強く引っ張る
+  limit = 15      # 何度まで torsion 差にペナルティをかけるか
+}
+
+これだとtorsion以外もreferenceよりになるのではないですか？bond とかangletとかもという意味です。
+ChatGPT:
+思考時間: 2m 7s
+
+良いところに気付きました。
+
+結論からいうと：
+
+reference_model は “torsion だけ” を参照モデルに寄せます。
+bond / angle / planarity を reference に合わせることはしません。
+
+なぜそう言えるか
+
+PHENIX 本家の説明ではっきりこう書いてあります：
+
+「reference-model method uses … restraints on torsion angles to the geometric target function」
+
+「Reference model restraints use the dihedral angles of an existing structure as restraints on the input model conformation」
+
+つまり reference_model がいじるのは「二面角（dihedral / torsion）」だけで、
+bond 長や angle は、通常どおり monomer library（今回は AceDRG cif）から来る幾何拘束に任されます。
+
+real_space_refine でも、この reference_model 機構は phenix.refine と同じ実装が使われていて、
+Afonine 2018 の RSR 論文でも、reference-model restraints は「類似モデルの torsion に基づく拘束」として扱われています。
+
+じゃあ bond / angle はどうなるのか？
+
+理想 bond 長 / angle / 平面性
+→ AceDRG 辞書 (CYC.cif など) に書いてある値がそのまま使われる
+
+そこに geometry_restraints の harmonic ポテンシャル がかかる（通常どおり）
+
+追加で reference_model が
+「**torsion が reference の値から Δ° ずれていたら、Δ²/σ² みたいなペナルティ（top-out 付き）を足す」
+という項を dihedral だけ に乗せる
+
+なので、
+bond/angle を reference の数値に合わせに行く力は入っていません。
+もちろん、torsion を動かした結果として座標全体が少し動き、
+結果として bond/angle も多少変わることはありますが、
+それを「reference に合わせろ」と言っている項は存在しません。
+
+参考までに：ligand への適用という意味での注意点
+
+Phenix FAQ にはこんな一文もあります：
+
+Reference model restraints are only intended to work with macromolecules.
+For ligands you should instead use separate harmonic restraints…
+
+つまり元々はタンパク質 / 核酸用の仕組みとして設計されています。
+
+あなたの 11mer 環状ペプチドを
+
+「1 個の LIG (CYC)」として扱うのか
+
+11 残基の peptide chain として扱うのか
+で挙動が変わる可能性があります。
+
+resname CYC の「1 残基 LIG」として扱った場合、
+reference_model がどこまで torsion を拾ってくれるかは微妙で、
+実際にはほとんど何も効いていない可能性もあります。
+（log や .geo に “reference-model torsion restraints” が出ているか、ぜひ一度確認すると良いです）
+
+もし 確実に torsion だけを MD/MDFit に寄せたいなら、選択肢は：
+
+今の案のまま reference_model を試す
+
+→ .geo を見て、本当に CYC に torsion restraints が出ているか確認
+
+もし効いていなければ
+
+geometry_restraints.edits で
+gREST/MDFit のメイン torsion 数本だけを dihedral restraint として手書きする
+
+bond/angle/plane は AceDRG にお任せ
+
+それでも「ほぼ凍結したい」なら
+
+reference_coordinate_restraints を使って Cartesian で軽く tether（これは bond/angle も含めて座標そのものを引っ張る）
+
+まとめ
+
+reference_model { … } ブロックは torsion だけ を reference に寄せる。
+
+bond / angle / planarity の理想値は AceDRG 辞書のまま で、そこに通常の幾何拘束がかかる。
+
+なので「これを書いても bond/angle が reference に引っ張られる」という心配は基本的には不要です。
+
+ただし、11mer を 1 残基 LIG としている場合、
+reference_model 機構がそもそもほとんど効いていない可能性もあるので、
+.geo / log を一度チェックしておくと安心です。
+
+もしよければ、
+
+CYC を「1 残基 LIG」としているのか
+
+11 個の非天然アミノ酸残基として伸ばしているのか
+
+を教えてもらえれば、それぞれの場合に 一番ラクな torsion バイアスのかけ方（.eff の具体例） まで書きます。
