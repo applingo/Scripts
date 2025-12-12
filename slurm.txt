@@ -1,0 +1,26 @@
+import subprocess
+
+def _run(cmd: list[str]) -> str:
+    return subprocess.check_output(cmd, text=True, stderr=subprocess.STDOUT).strip()
+
+def count_idle_nodes(cluster: str, partition: str | None = None) -> int:
+    # NodeList を取る（圧縮表記の可能性あり）
+    cmd = ["sinfo", "-M", cluster, "-h", "-t", "idle", "-o", "%N"]
+    if partition:
+        cmd += ["-p", partition]
+
+    nodelist_text = _run(cmd)
+    if not nodelist_text:
+        return 0
+
+    # 行・スペース区切りで NodeList をまとめて scontrol で展開
+    exprs = " ".join(nodelist_text.splitlines())
+    hostnames = _run(["scontrol", "show", "hostnames", exprs]).splitlines()
+
+    # 念のためユニーク化（複数パーティション等の重複対策）
+    return len(set(h.strip() for h in hostnames if h.strip()))
+
+# 例
+print(count_idle_nodes("cryo_noi"))
+# パーティション限定したいなら:
+# print(count_idle_nodes("cryo_noi", partition="gpu"))
